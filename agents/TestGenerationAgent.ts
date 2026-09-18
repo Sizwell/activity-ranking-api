@@ -33,15 +33,26 @@ export class TestGenerationAgent {
       "test-generation.md"
     );
 
-    const prompt = await fs.readFile(
+    const instructions = await fs.readFile(
       promptPath,
       "utf-8"
     );
 
-    const response = await this.ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt
-    });
+    const request = `
+Using the instructions below, generate additional
+Gherkin scenarios for the Activity Ranking API.
+
+The scenarios must complement the existing test suite.
+Do not repeat the existing scenarios.
+
+${instructions}
+`;
+
+    const response =
+      await this.ai.models.generateContent({
+        model: "gemini-3.6-flash",
+        contents: request
+      });
 
     return response.text ?? "";
   }

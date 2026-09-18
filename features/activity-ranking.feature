@@ -50,3 +50,20 @@ Feature: Activity Ranking API - City-Based Weather Forecast Integration
     When I request activity rankings for "Atlantis123"
     Then the response status should be 404
     And the response message should be "City not found"
+
+  Scenario: An empty city name is rejected
+    When I request activity rankings for ""
+    Then the response status should be 400
+
+
+  Scenario: A city name containing only whitespace is rejected
+    When I request activity rankings for "   "
+    Then the response status should be 400
+
+
+  Scenario: A city match contains the required location information
+    Given cities matching "Cape" exist
+    When I request activity rankings for the partial city name "Cape"
+    Then the response status should be 200
+    And each city match should contain a name
+    And each city match should contain a country
