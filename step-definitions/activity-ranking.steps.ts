@@ -280,3 +280,38 @@ Then(
     );
   }
 );
+
+Then(
+  "each city match should contain a name",
+  function (this: CustomWorld) {
+
+    const body = getCityMatchResponse(
+      this.response!.data
+    );
+
+    for (const match of body.matches) {
+      assert.ok(
+        match.name,
+        "Expected city match to contain a name"
+      );
+    }
+  }
+);
+
+
+Then(
+  "each city match should contain a country",
+  function (this: CustomWorld) {
+
+    const body = getCityMatchResponse(
+      this.response!.data
+    );
+
+    for (const match of body.matches) {
+      assert.ok(
+        match.country,
+        "Expected city match to contain a country"
+      );
+    }
+  }
+);
