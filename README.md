@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # activity-ranking-api
 =======
 # Activity Ranking API – Agentic AI SDET
@@ -451,4 +450,3 @@ The repository contains:
 * Testing trade-offs
 
 The project is designed to demonstrate specification-first thinking, realistic API testing and practical use of AI within an SDET workflow.
->>>>>>> 66a2652 (Updated project flow)
