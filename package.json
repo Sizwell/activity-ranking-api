@@ -4,8 +4,16 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
     "test:bdd": "cucumber-js",
-    "ai:generate": "tsx agents/test-generation-test.ts"
+    "test:gemini": "tsx tests/gemini-connection.ts",
+    "test:analyst": "tsx tests/test-analyst.ts",
+    "test:generator": "tsx tests/test-generator.ts",
+    "test:executor": "tsx tests/test-executor.ts",
+    "test:failure-analysis": "tsx tests/failure-analyzer.ts",
+    "test:heal": "tsx tests/self-healing.ts",
+    "test:crew": "tsx tests/test-crew.ts"
   },
   "keywords": [],
   "author": "",
@@ -13,7 +21,8 @@
   "type": "commonjs",
   "devDependencies": {
     "@cucumber/cucumber": "^13.2.1",
-    "@types/node": "^26.6.1",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.6.2",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2"
   },
@@ -25,6 +34,6 @@
   "dependencies": {
     "@google/genai": "^2.23.0",
     "axios": "^1.20.0",
-    "dotenv": "^18.0.0"
+    "dotenv": "^18.0.1"
   }
 }
