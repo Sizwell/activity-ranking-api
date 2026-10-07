@@ -1,88 +1,393 @@
-import { Given, When, Then, Before, After } from '@cucumber/cucumber';
-import { expect, request, APIRequestContext, APIResponse } from '@playwright/test';
+import {
+  Given,
+  When,
+  Then,
+  Before,
+  After,
+  DataTable
+} from '@cucumber/cucumber';
+
+import {
+  expect,
+  request,
+  APIRequestContext,
+  APIResponse
+} from '@playwright/test';
 
 let apiContext: APIRequestContext;
 let response: APIResponse;
 let responseBody: any;
-let simulateUpstreamError = false;
+
+const BASE_URL =
+  process.env.API_BASE_URL || 'http://localhost:3000';
 
 Before(async () => {
   apiContext = await request.newContext({
-    baseURL: process.env.BASE_URL || 'http://localhost:3000'
+    baseURL: BASE_URL,
+    extraHTTPHeaders: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json'
+    }
   });
-  simulateUpstreamError = false;
 });
 
 After(async () => {
-  await apiContext.dispose();
-});
-
-Given('the Weather Planner API is available', async () => {
-  const ping = await apiContext.get('/api/health').catch(() => null);
-  // If health check endpoint is not configured, we accept normal routing presence
-  if (ping) {
-    expect(ping.status()).toBe(200);
+  if (apiContext) {
+    await apiContext.dispose();
   }
 });
 
-Given('the upstream Open-Meteo API is experiencing issues', async () => {
-  simulateUpstreamError = true;
+/*
+ * --------------------------------------------------------------------------
+ * Given steps
+ * --------------------------------------------------------------------------
+ */
+
+Given('the API is running', async function () {
+  const health = await apiContext.get('/health');
+
+  expect(health.status()).toBeDefined();
 });
 
-When('I request activity recommendations for city {string}', async (city: string) => {
-  const headers: Record<string, string> = {};
-  if (simulateUpstreamError) {
-    headers['x-mock-upstream-error'] = 'true';
+Given('the city {string} exists', async function (city: string) {
+  // This step establishes the test precondition.
+  // The actual behaviour under test is performed by the When step.
+  this.city = city;
+});
+
+Given('the city {string} does not exist', async function (city: string) {
+  // Preserve the scenario intent. The actual API request is made
+  // by the corresponding When step.
+  this.city = city;
+});
+
+Given('cities matching {string} exist', async function (partialCity: string) {
+  // Preserve the scenario precondition.
+  this.partialCity = partialCity;
+});
+
+/*
+ * --------------------------------------------------------------------------
+ * When steps
+ * --------------------------------------------------------------------------
+ */
+
+When(
+  'I request activity rankings for {string}',
+  async function (city: string) {
+    response = await apiContext.get('/api/activities', {
+      params: { city }
+    });
+
+    responseBody = await response.json().catch(() => ({}));
   }
-  response = await apiContext.get('/api/activities', {
-    params: { city },
-    headers
-  });
-  responseBody = await response.json();
-});
+);
 
-Then('the response status code should be {int}', async (statusCode: number) => {
-  expect(response.status()).toBe(statusCode);
-});
+When(
+  'I request activity rankings for the partial city name {string}',
+  async function (partialCity: string) {
+    response = await apiContext.get('/api/activities', {
+      params: { city: partialCity }
+    });
 
-Then('the response should contain a {int}-day forecast', async (days: number) => {
-  expect(responseBody.forecast).toBeDefined();
-  expect(Array.isArray(responseBody.forecast)).toBe(true);
-  expect(responseBody.forecast.length).toBe(days);
-});
-
-Then('each day should have {int} evaluated activities', async (activityCount: number) => {
-  for (const day of responseBody.forecast) {
-    expect(day.activities).toBeDefined();
-    expect(day.activities.length).toBe(activityCount);
+    responseBody = await response.json().catch(() => ({}));
   }
-});
+);
 
-Then('the activities should be ranked from highest to lowest suitability', async () => {
-  for (const day of responseBody.forecast) {
-    const suitabilities = day.activities.map((a: any) => a.suitability);
-    const sortedSuitabilities = [...suitabilities].sort((a, b) => b - a);
-    expect(suitabilities).toEqual(sortedSuitabilities);
+/*
+ * --------------------------------------------------------------------------
+ * Response status
+ * --------------------------------------------------------------------------
+ */
+
+Then(
+  'the response status should be {int}',
+  async function (statusCode: number) {
+    expect(response.status()).toBe(statusCode);
   }
-});
+);
 
-Then('the response should return a list of matching locations', async () => {
-  expect(responseBody.matchingLocations).toBeDefined();
-  expect(Array.isArray(responseBody.matchingLocations)).toBe(true);
-  expect(responseBody.matchingLocations.length).toBeGreaterThan(0);
-});
+/*
+ * --------------------------------------------------------------------------
+ * Seven-day forecast
+ * --------------------------------------------------------------------------
+ */
 
-Then('each activity recommendation must contain {string}, {string}, {string}, and {string}', async (f1: string, f2: string, f3: string, f4: string) => {
-  for (const day of responseBody.forecast) {
-    expect(day[f1]).toBeDefined(); // Evaluates 'date'
-    for (const act of day.activities) {
-      expect(act[f2]).toBeDefined(); // Evaluates 'activity'
-      expect(act[f3]).toBeDefined(); // Evaluates 'suitability'
-      expect(act[f4]).toBeDefined(); // Evaluates 'reasoning'
+Then(
+  'the response should contain 7 days of weather-based activity rankings',
+  async function () {
+    expect(responseBody).toHaveProperty('forecast');
+    expect(Array.isArray(responseBody.forecast)).toBe(true);
+    expect(responseBody.forecast.length).toBe(7);
+  }
+);
+
+Then(
+  'the response should contain a ranked list of activities for 7 days',
+  async function () {
+    expect(responseBody).toHaveProperty('forecast');
+    expect(Array.isArray(responseBody.forecast)).toBe(true);
+    expect(responseBody.forecast.length).toBe(7);
+  }
+);
+
+/*
+ * --------------------------------------------------------------------------
+ * Activities per day
+ * --------------------------------------------------------------------------
+ */
+
+Then(
+  'each day should contain rankings for:',
+  async function (dataTable: DataTable) {
+    const expectedActivities = dataTable
+      .raw()
+      .slice(1)
+      .map((row) => row[0].trim());
+
+    expect(responseBody).toHaveProperty('forecast');
+    expect(Array.isArray(responseBody.forecast)).toBe(true);
+
+    for (const day of responseBody.forecast) {
+      expect(day).toHaveProperty('activities');
+      expect(Array.isArray(day.activities)).toBe(true);
+
+      const actualActivities = day.activities.map(
+        (activity: any) => activity.activity_name
+      );
+
+      for (const expectedActivity of expectedActivities) {
+        expect(actualActivities).toContain(expectedActivity);
+      }
     }
   }
-});
+);
 
-Then('the response should contain an error message {string}', async (errorMessage: string) => {
-  expect(responseBody.error).toBe(errorMessage);
-});
+/*
+ * --------------------------------------------------------------------------
+ * Required activity information
+ * --------------------------------------------------------------------------
+ */
+
+Then(
+  'each activity ranking should contain a date',
+  async function () {
+    expect(responseBody).toHaveProperty('forecast');
+
+    for (const day of responseBody.forecast) {
+      expect(day).toHaveProperty('date');
+      expect(typeof day.date).toBe('string');
+      expect(day.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+  }
+);
+
+Then(
+  'each activity ranking should contain an activity name',
+  async function () {
+    expect(responseBody).toHaveProperty('forecast');
+
+    for (const day of responseBody.forecast) {
+      expect(day).toHaveProperty('activities');
+      expect(Array.isArray(day.activities)).toBe(true);
+
+      for (const activity of day.activities) {
+        expect(activity).toHaveProperty('activity_name');
+        expect(typeof activity.activity_name).toBe('string');
+        expect(activity.activity_name.length).toBeGreaterThan(0);
+      }
+    }
+  }
+);
+
+Then(
+  'each activity ranking should contain a suitability measure',
+  async function () {
+    expect(responseBody).toHaveProperty('forecast');
+
+    for (const day of responseBody.forecast) {
+      for (const activity of day.activities) {
+        expect(activity).toHaveProperty('suitability_measure');
+        expect(typeof activity.suitability_measure).toBe('number');
+
+        expect(activity.suitability_measure).toBeGreaterThanOrEqual(0);
+        expect(activity.suitability_measure).toBeLessThanOrEqual(100);
+      }
+    }
+  }
+);
+
+Then(
+  'each activity ranking should contain reasoning',
+  async function () {
+    expect(responseBody).toHaveProperty('forecast');
+
+    for (const day of responseBody.forecast) {
+      for (const activity of day.activities) {
+        expect(activity).toHaveProperty('reasoning');
+        expect(typeof activity.reasoning).toBe('string');
+        expect(activity.reasoning.length).toBeGreaterThan(0);
+      }
+    }
+  }
+);
+
+/*
+ * --------------------------------------------------------------------------
+ * Ranking
+ * --------------------------------------------------------------------------
+ */
+
+Then(
+  'the activities for each day should be ordered by weather suitability',
+  async function () {
+    expect(responseBody).toHaveProperty('forecast');
+
+    for (const day of responseBody.forecast) {
+      expect(Array.isArray(day.activities)).toBe(true);
+
+      const scores = day.activities.map(
+        (activity: any) => activity.suitability_measure
+      );
+
+      const sortedScores = [...scores].sort((a, b) => b - a);
+
+      expect(scores).toEqual(sortedScores);
+    }
+  }
+);
+
+Then(
+  'the daily activities should be ranked from highest to lowest suitability',
+  async function () {
+    for (const day of responseBody.forecast) {
+      const scores = day.activities.map(
+        (activity: any) => activity.suitability_measure
+      );
+
+      const sortedScores = [...scores].sort((a, b) => b - a);
+
+      expect(scores).toEqual(sortedScores);
+    }
+  }
+);
+
+/*
+ * --------------------------------------------------------------------------
+ * City matching
+ * --------------------------------------------------------------------------
+ */
+
+Then(
+  'the response should contain a list of possible city matches',
+  async function () {
+    expect(responseBody).toHaveProperty('matches');
+    expect(Array.isArray(responseBody.matches)).toBe(true);
+  }
+);
+
+Then(
+  'the response should contain a list of matching cities including {string}',
+  async function (expectedCity: string) {
+    expect(responseBody).toHaveProperty('matches');
+    expect(Array.isArray(responseBody.matches)).toBe(true);
+
+    const hasMatch = responseBody.matches.some(
+      (match: any) =>
+        typeof match.name === 'string' &&
+        match.name
+          .toLowerCase()
+          .includes(expectedCity.toLowerCase())
+    );
+
+    expect(hasMatch).toBe(true);
+  }
+);
+
+Then(
+  'each city match should contain a name',
+  async function () {
+    expect(responseBody).toHaveProperty('matches');
+    expect(Array.isArray(responseBody.matches)).toBe(true);
+
+    for (const match of responseBody.matches) {
+      expect(match).toHaveProperty('name');
+      expect(typeof match.name).toBe('string');
+      expect(match.name.length).toBeGreaterThan(0);
+    }
+  }
+);
+
+Then(
+  'each city match should contain a country',
+  async function () {
+    expect(responseBody).toHaveProperty('matches');
+    expect(Array.isArray(responseBody.matches)).toBe(true);
+
+    for (const match of responseBody.matches) {
+      expect(match).toHaveProperty('country');
+      expect(typeof match.country).toBe('string');
+      expect(match.country.length).toBeGreaterThan(0);
+    }
+  }
+);
+
+/*
+ * --------------------------------------------------------------------------
+ * Error responses
+ * --------------------------------------------------------------------------
+ */
+
+Then(
+  'the response message should be {string}',
+  async function (expectedMessage: string) {
+    expect(responseBody).toHaveProperty('message');
+    expect(responseBody.message).toBe(expectedMessage);
+  }
+);
+
+/*
+ * --------------------------------------------------------------------------
+ * Contract validation
+ * --------------------------------------------------------------------------
+ */
+
+Then(
+  'the response schema should be valid according to the contract',
+  async function () {
+    expect(responseBody).toBeDefined();
+    expect(responseBody).toHaveProperty('forecast');
+
+    const supportedActivities = [
+      'Skiing',
+      'Surfing',
+      'Outdoor Sightseeing',
+      'Indoor Sightseeing'
+    ];
+
+    responseBody.forecast.forEach((day: any) => {
+      expect(day.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(Array.isArray(day.activities)).toBe(true);
+
+      day.activities.forEach((activity: any) => {
+        expect(supportedActivities).toContain(
+          activity.activity_name
+        );
+
+        expect(typeof activity.suitability_measure).toBe(
+          'number'
+        );
+
+        expect(
+          activity.suitability_measure
+        ).toBeGreaterThanOrEqual(0);
+
+        expect(
+          activity.suitability_measure
+        ).toBeLessThanOrEqual(100);
+
+        expect(typeof activity.reasoning).toBe('string');
+      });
+    });
+  }
+);

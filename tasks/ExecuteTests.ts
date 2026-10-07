@@ -14,7 +14,7 @@ export class ExecuteTests {
     try {
 
       const result = await execAsync(
-        "npx cucumber-js --format progress",
+        "npx cucumber-js --require-module tsx/cjs --require \"tests/step-definitions/**/*.ts\" --format progress",
         {
           maxBuffer: 10 * 1024 * 1024
         }

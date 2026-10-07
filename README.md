@@ -82,6 +82,9 @@ activity-ranking-api/
 ├── crew/
 │   └── TestCrew.ts
 │
+├── feature/
+│   └── activity-ranking.feature
+|
 ├── input/
 │   └── activity-ranking-ticket.md
 │
@@ -107,10 +110,8 @@ activity-ranking-api/
 │   └── HealTest.ts
 │
 ├── tests/
-│   ├── features/
-│   ├── step-definitions/
 │   ├── api/
-│   └── test-crew.ts
+│   ├── step-definitions/
 │
 ├── test-results/
 │

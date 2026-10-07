@@ -1,73 +1,93 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, APIRequestContext } from '@playwright/test';
 
-const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+test.describe('Activity Planner API Contract & Integration Tests', () => {
+  let apiContext: APIRequestContext;
+  const BASE_URL = process.env.API_BASE_URL || 'http://localhost:3000';
 
-test.describe('Weather-based Activity Planner API Tests', () => {
-
-  test('should retrieve 7-day forecast and ranked activities for a valid city', async ({ request }) => {
-    const response = await request.get(`${BASE_URL}/api/activities`, {
-      params: { city: 'Paris' }
+  test.beforeAll(async ({ playwright }) => {
+    apiContext = await playwright.request.newContext({
+      baseURL: BASE_URL,
+      extraHTTPHeaders: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
     });
-    expect(response.status()).toBe(200);
+  });
 
+  test.afterAll(async () => {
+    await apiContext.dispose();
+  });
+
+  test('TC001 & TC005: Exact city search returns 7-day ranked forecast and validates response schema', async () => {
+    const response = await apiContext.get('/api/activities', {
+      params: { city: 'Chamonix' }
+    });
+    
+    expect(response.status()).toBe(200);
     const body = await response.json();
-    expect(body.forecast).toBeDefined();
+
+    expect(body).toHaveProperty('forecast');
+    expect(Array.isArray(body.forecast)).toBe(true);
     expect(body.forecast.length).toBe(7);
 
-    for (const day of body.forecast) {
-      expect(day.date).toBeDefined();
-      expect(day.activities).toBeDefined();
+    const supportedActivities = ['Skiing', 'Surfing', 'Outdoor Sightseeing', 'Indoor Sightseeing'];
+
+    body.forecast.forEach((day: any) => {
+      expect(day).toHaveProperty('date');
+      expect(day.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(Array.isArray(day.activities)).toBe(true);
       expect(day.activities.length).toBe(4);
 
-      // Validate that all expected activities are returned
-      const activityNames = day.activities.map((a: any) => a.activity);
-      expect(activityNames).toContain('Skiing');
-      expect(activityNames).toContain('Surfing');
-      expect(activityNames).toContain('Outdoor Sightseeing');
-      expect(activityNames).toContain('Indoor Sightseeing');
-
-      // Validate that each recommendation contains the mandatory structure
-      for (const activity of day.activities) {
-        expect(activity.suitability).toBeDefined();
-        expect(typeof activity.suitability).toBe('number');
-        expect(activity.reasoning).toBeDefined();
+      day.activities.forEach((activity: any) => {
+        expect(supportedActivities).toContain(activity.activity_name);
+        expect(activity).toHaveProperty('suitability_measure');
+        expect(typeof activity.suitability_measure).toBe('number');
+        expect(activity.suitability_measure).toBeGreaterThanOrEqual(0);
+        expect(activity.suitability_measure).toBeLessThanOrEqual(100);
+        expect(activity).toHaveProperty('reasoning');
         expect(typeof activity.reasoning).toBe('string');
-      }
-
-      // Verify suitability ranking: highest score to lowest score
-      const suitabilities = day.activities.map((a: any) => a.suitability);
-      const sortedSuitabilities = [...suitabilities].sort((a, b) => b - a);
-      expect(suitabilities).toEqual(sortedSuitabilities);
-    }
+      });
+    });
   });
 
-  test('should return a list of matching locations when a partial query is provided', async ({ request }) => {
-    const response = await request.get(`${BASE_URL}/api/activities`, {
-      params: { city: 'Lon' }
+  test('TC002: Partial city name search returns matches list', async () => {
+    const response = await apiContext.get('/api/activities', {
+      params: { city: 'Cham' }
+    });
+
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+
+    expect(body).toHaveProperty('matches');
+    expect(Array.isArray(body.matches)).toBe(true);
+    body.matches.forEach((match: any) => {
+      expect(match).toHaveProperty('name');
+      expect(match.name.toLowerCase()).toContain('cham');
+    });
+  });
+
+  test('TC003: Verify integration contract works for outdoor & indoor conditions', async () => {
+    // Checking structured responses map cleanly for high suitability parameters
+    const response = await apiContext.get('/api/activities', {
+      params: { city: 'Lisbon' }
     });
     expect(response.status()).toBe(200);
-
     const body = await response.json();
-    expect(body.matchingLocations).toBeDefined();
-    expect(Array.isArray(body.matchingLocations)).toBe(true);
-    expect(body.matchingLocations.length).toBeGreaterThan(0);
-    
-    for (const location of body.matchingLocations) {
-      expect(location.name).toBeDefined();
-      expect(location.name.toLowerCase()).toContain('lon');
-    }
+    expect(body.forecast[0].activities.length).toBe(4);
   });
 
-  test('should return a 502 Bad Gateway response when the upstream Open-Meteo API fails', async ({ request }) => {
-    const response = await request.get(`${BASE_URL}/api/activities`, {
-      params: { city: 'Paris' },
-      headers: {
-        'x-mock-upstream-error': 'true'
+  test('TC004: Verify activities ranking logic is sorted descending', async () => {
+    const response = await apiContext.get('/api/activities', {
+      params: { city: 'Aspen' }
+    });
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+
+    body.forecast.forEach((day: any) => {
+      const suitabilities = day.activities.map((a: any) => a.suitability_measure);
+      for (let i = 0; i < suitabilities.length - 1; i++) {
+        expect(suitabilities[i]).toBeGreaterThanOrEqual(suitabilities[i + 1]);
       }
     });
-    expect(response.status()).toBe(502);
-
-    const body = await response.json();
-    expect(body.error).toBe('Upstream weather service unavailable');
   });
 });

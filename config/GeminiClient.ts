@@ -4,47 +4,46 @@ import dotenv from "dotenv";
 dotenv.config();
 
 export class GeminiClient {
-
   private readonly client: GoogleGenAI;
 
   private readonly maxRetries = 2;
   private readonly retryDelayMs = 8000;
 
   constructor() {
-
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-      throw new Error(
-        "GEMINI_API_KEY is not configured"
-      );
+      throw new Error("GEMINI_API_KEY is not configured");
     }
 
     this.client = new GoogleGenAI({
-      apiKey
+      apiKey,
     });
   }
 
   async generate(prompt: string): Promise<string> {
-
-    let lastError: any;
+    let lastError: unknown;
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
-
       try {
-
         const response = await this.client.models.generateContent({
           model: "gemini-3.5-flash",
-          contents: prompt
+          contents: prompt,
         });
 
         return response.text ?? "";
-
       } catch (error: any) {
-
         lastError = error;
 
-        if (error?.status !== 429) {
+        const status = error?.status;
+
+        const retryable =
+          status === 429 ||
+          status === 500 ||
+          status === 502 ||
+          status === 503;
+
+        if (!retryable) {
           throw error;
         }
 
@@ -53,7 +52,7 @@ export class GeminiClient {
         }
 
         console.log(
-          `Gemini quota/rate limit reached. ` +
+          `Gemini request failed with status ${status}. ` +
           `Retrying in ${this.retryDelayMs / 1000}s... ` +
           `(attempt ${attempt + 1}/${this.maxRetries})`
         );
@@ -63,25 +62,29 @@ export class GeminiClient {
     }
 
     throw new Error(
-      "Gemini API quota/rate limit still exceeded after retries. " +
-      "The agent cannot continue until the Gemini quota becomes available."
+      `Gemini request failed after ${this.maxRetries} retries. ` +
+      `Last error: ${String(lastError)}`
     );
   }
 
   parseJson<T>(response: string): T {
-
     let cleaned = response.trim();
 
     cleaned = cleaned.replace(/^```json\s*/i, "");
     cleaned = cleaned.replace(/^```\s*/i, "");
     cleaned = cleaned.replace(/\s*```$/i, "");
 
-    return JSON.parse(cleaned) as T;
+    try {
+      return JSON.parse(cleaned) as T;
+    } catch {
+      throw new Error(
+        `Gemini returned invalid JSON.\n\nResponse:\n${response}`
+      );
+    }
   }
 
   private delay(ms: number): Promise<void> {
-
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       setTimeout(resolve, ms);
     });
   }

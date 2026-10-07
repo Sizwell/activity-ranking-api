@@ -6,7 +6,8 @@
   "scripts": {
     "test": "playwright test",
     "test:ui": "playwright test --ui",
-    "test:bdd": "cucumber-js",
+    "clean": "rimraf generated reports",
+    "test:bdd": "npm run clean && cucumber-js --require-module tsx/cjs --require \"tests/step-definitions/**/*.ts\"",
     "test:gemini": "tsx tests/gemini-connection.ts",
     "test:analyst": "tsx tests/test-analyst.ts",
     "test:generator": "tsx tests/test-generator.ts",
@@ -23,6 +24,7 @@
     "@cucumber/cucumber": "^13.2.1",
     "@playwright/test": "^1.63.0",
     "@types/node": "^26.6.2",
+    "rimraf": "^6.1.3",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2"
   },
